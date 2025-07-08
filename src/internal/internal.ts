@@ -105,10 +105,15 @@ const makeTester = <R>(
     }
 
     const arbs = fc.record(
-      Object.keys(arbitraries).reduce(function(result, key) {
-        result[key] = Schema.isSchema(arbitraries[key]) ? Arbitrary.make(arbitraries[key]) : arbitraries[key]
-        return result
-      }, {} as Record<string, fc.Arbitrary<any>>)
+					Object.entries(arbitraries).reduce(
+						(result, [key, arbitrary]) => {
+							result[key] = Schema.isSchema(arbitrary)
+								? Arbitrary.make(arbitrary)
+								: arbitrary;
+							return result;
+						},
+						{} as Record<string, fc.Arbitrary<any>>,
+					),
     )
 
     return it(
