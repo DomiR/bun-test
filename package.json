@@ -1,6 +1,6 @@
 {
   "name": "@domir/bun-test",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "license": "MIT",
   "description": "A set of helpers for testing Effects with bun test",
