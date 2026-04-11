@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@domir/bun-test"
 import * as Cause from "effect/Cause"
 import * as Data from "effect/Data"
-import * as Either from "effect/Either"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
+import * as Result from "effect/Result"
 
 describe("toMatchObject", () => {
   it("plain objects", () => {
@@ -27,32 +27,32 @@ describe("toMatchObject", () => {
     expect({ x: Option.none(), y: Option.none() }).not.toMatchObject({ x: Option.some({}) })
   })
 
-  it("either", () => {
-    expect(Either.right({ a: 1, b: 2 })).toMatchObject(Either.right({ a: 1 }))
-    expect(Either.left({ a: 1, b: 2 })).toMatchObject(Either.left({ a: 1 }))
+  it("result", () => {
+    expect(Result.succeed({ a: 1, b: 2 })).toMatchObject(Result.succeed({ a: 1 }))
+    expect(Result.fail({ a: 1, b: 2 })).toMatchObject(Result.fail({ a: 1 }))
 
-    expect(Either.right({ a: 1, b: 2 })).not.toMatchObject(Either.left({ a: 1 }))
-    expect(Either.left({ a: 1, b: 2 })).not.toMatchObject(Either.right({ a: 1 }))
+    expect(Result.succeed({ a: 1, b: 2 })).not.toMatchObject(Result.fail({ a: 1 }))
+    expect(Result.fail({ a: 1, b: 2 })).not.toMatchObject(Result.succeed({ a: 1 }))
   })
 
-  it("either", () => {
-    expect(Either.right({ a: 1, b: 2 })).toMatchObject(Either.right({ a: 1 }))
-    expect(Either.left({ a: 1, b: 2 })).toMatchObject(Either.left({ a: 1 }))
+  it("result", () => {
+    expect(Result.succeed({ a: 1, b: 2 })).toMatchObject(Result.succeed({ a: 1 }))
+    expect(Result.fail({ a: 1, b: 2 })).toMatchObject(Result.fail({ a: 1 }))
 
-    expect(Either.right({ a: 1, b: 2 })).not.toMatchObject(Either.left({ a: 1 }))
-    expect(Either.left({ a: 1, b: 2 })).not.toMatchObject(Either.right({ a: 1 }))
+    expect(Result.succeed({ a: 1, b: 2 })).not.toMatchObject(Result.fail({ a: 1 }))
+    expect(Result.fail({ a: 1, b: 2 })).not.toMatchObject(Result.succeed({ a: 1 }))
   })
 })
 
 describe.each(["toStrictEqual", "toEqual"] as const)("%s", (matcher) => {
-  it("either", () => {
-    expect(Either.right(1))[matcher](Either.right(1))
-    expect(Either.left(1))[matcher](Either.left(1))
+  it("result", () => {
+    expect(Result.succeed(1))[matcher](Result.succeed(1))
+    expect(Result.fail(1))[matcher](Result.fail(1))
 
-    expect(Either.right(2)).not[matcher](Either.right(1))
-    expect(Either.left(2)).not[matcher](Either.left(1))
-    expect(Either.left(1)).not[matcher](Either.right(1))
-    expect(Either.left(1)).not[matcher](Either.right(2))
+    expect(Result.succeed(2)).not[matcher](Result.succeed(1))
+    expect(Result.fail(2)).not[matcher](Result.fail(1))
+    expect(Result.fail(1)).not[matcher](Result.succeed(1))
+    expect(Result.fail(1)).not[matcher](Result.succeed(2))
   })
 
   it("exit", () => {

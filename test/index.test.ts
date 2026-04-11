@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, it, layer } from "@domir/bun-test"
-import { Context, Duration, Effect, FastCheck, Fiber, Layer, Schema, TestClock, TestConfig } from "effect"
+import * as Clock from "effect/Clock"
+import { Context, Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { FastCheck, TestClock } from "effect/testing"
 
 it.live(
   "live %s",
@@ -86,25 +88,28 @@ it.scopedLive.fails("interrupts on timeout", (ctx) =>
     yield* Effect.sleep(1000)
   }), 1)
 
-class Foo extends Context.Tag("Foo")<Foo, "foo">() {
+class Foo extends Context.Service<Foo, "foo">()("Foo") {
   static Live = Layer.succeed(Foo, "foo")
 }
 
-class Bar extends Context.Tag("Bar")<Bar, "bar">() {
-  static Live = Layer.effect(Bar, Effect.map(Foo, () => "bar" as const))
+class Bar extends Context.Service<Bar, "bar">()("Bar") {
+  static Live = Layer.effect(Bar, Effect.map(Effect.fromYieldable(Foo), () => "bar" as const))
 }
 
-class Sleeper extends Effect.Service<Sleeper>()("Sleeper", {
-  effect: Effect.gen(function*() {
-    const clock = yield* Effect.clock
+class Sleeper extends Context.Service<Sleeper, { sleep: (ms: number) => Effect.Effect<void> }>()("Sleeper") {
+  static Default = Layer.effect(
+    Sleeper,
+    Effect.gen(function*() {
+      const clock = yield* Clock.Clock
 
-    return {
-      sleep: (ms: number) => clock.sleep(Duration.millis(ms))
-    } as const
-  })
-}) {}
+      return {
+        sleep: (ms: number) => clock.sleep(Duration.millis(ms))
+      } as const
+    })
+  )
+}
 
-const realNumber = Schema.Finite.pipe(Schema.nonNaN())
+const realNumber = Schema.Finite
 
 describe.only("layer", () => {
   layer(Foo.Live)((it) => {
@@ -140,8 +145,8 @@ describe.only("layer", () => {
         expect(released).toEqual(true)
       })
 
-      class Scoped extends Context.Tag("Scoped")<Scoped, "scoped">() {
-        static Live = Layer.scoped(
+      class Scoped extends Context.Service<Scoped, "scoped">()("Scoped") {
+        static Live = Layer.effect(
           Scoped,
           Effect.acquireRelease(
             Effect.succeed("scoped" as const),
@@ -177,12 +182,11 @@ describe.only("layer", () => {
   })
 
   layer(Sleeper.Default)("test services", (it) => {
-    it.effect("TestClock", () =>
+    it.scoped("TestClock", () =>
       Effect.gen(function*() {
-        yield* TestConfig.TestConfig
         const sleeper = yield* Sleeper
-        const fiber = yield* Effect.fork(sleeper.sleep(100_000))
-        yield* Effect.yieldNow()
+        const fiber = yield* Effect.forkChild(sleeper.sleep(100_000))
+        yield* Effect.yieldNow
         yield* TestClock.adjust(100_000)
         yield* Fiber.join(fiber)
       }))
