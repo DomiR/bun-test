@@ -1,28 +1,26 @@
 /**
  * @since 1.0.0
  */
-import * as Arbitrary from "effect/Arbitrary"
 import * as Cause from "effect/Cause"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import * as fc from "effect/FastCheck"
 import * as Fiber from "effect/Fiber"
 import { flow, identity, pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
+import * as ManagedRuntime from "effect/ManagedRuntime"
 import { isObject } from "effect/Predicate"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
-import * as TestEnvironment from "effect/TestContext"
-import type * as TestServices from "effect/TestServices"
+import { FastCheck as fc, TestClock } from "effect/testing"
 import * as B from "../bun.js"
 import type * as BunTest from "../index.js"
 
 const runPromise = () => <E, A>(effect: Effect.Effect<A, E>) =>
   Effect.gen(function*() {
-    const exitFiber = yield* Effect.fork(Effect.exit(effect))
+    const exitFiber = yield* Effect.forkChild(Effect.exit(effect))
 
     const exit = yield* Fiber.join(exitFiber)
     if (Exit.isSuccess(exit)) {
@@ -42,8 +40,8 @@ const runPromise = () => <E, A>(effect: Effect.Effect<A, E>) =>
 const runTest = () => <E, A>(effect: Effect.Effect<A, E>) => runPromise()(effect)
 
 /** @internal */
-const TestEnv = TestEnvironment.TestContext.pipe(
-  Layer.provide(Logger.remove(Logger.defaultLogger))
+const TestEnv = TestClock.layer().pipe(
+  Layer.provide(Logger.layer([]))
 )
 
 /** @internal */
@@ -90,7 +88,7 @@ const makeTester = <R>(
 
   const prop: BunTest.BunTest.Tester<R>["prop"] = (name, arbitraries, self, timeout) => {
     if (Array.isArray(arbitraries)) {
-      const arbs = arbitraries.map((arbitrary) => Schema.isSchema(arbitrary) ? Arbitrary.make(arbitrary) : arbitrary)
+      const arbs = arbitraries.map((arbitrary) => Schema.isSchema(arbitrary) ? Schema.toArbitrary(arbitrary) : arbitrary)
       return it(
         name,
         () =>
@@ -108,7 +106,7 @@ const makeTester = <R>(
 					Object.entries(arbitraries).reduce(
 						(result, [key, arbitrary]) => {
 							result[key] = Schema.isSchema(arbitrary)
-								? Arbitrary.make(arbitrary)
+								? Schema.toArbitrary(arbitrary)
 								: arbitrary;
 							return result;
 						},
@@ -136,7 +134,7 @@ const makeTester = <R>(
 /** @internal */
 export const prop: BunTest.BunTest.Methods["prop"] = (name, arbitraries, self, timeout) => {
   if (Array.isArray(arbitraries)) {
-    const arbs = arbitraries.map((arbitrary) => Schema.isSchema(arbitrary) ? Arbitrary.make(arbitrary) : arbitrary)
+    const arbs = arbitraries.map((arbitrary) => Schema.isSchema(arbitrary) ? Schema.toArbitrary(arbitrary) : arbitrary)
     return B.it(
       name,
       // @ts-ignore
@@ -147,7 +145,7 @@ export const prop: BunTest.BunTest.Methods["prop"] = (name, arbitraries, self, t
 
   const arbs = fc.record(
     Object.keys(arbitraries).reduce(function(result, key) {
-      result[key] = Schema.isSchema(arbitraries[key]) ? Arbitrary.make(arbitraries[key]) : arbitraries[key]
+      result[key] = Schema.isSchema(arbitraries[key]) ? Schema.toArbitrary(arbitraries[key]) : arbitraries[key]
       return result
     }, {} as Record<string, fc.Arbitrary<any>>)
   )
@@ -187,33 +185,41 @@ export const layer = <R, E, const ExcludeTestServices extends boolean = false>(
 ) => {
   const excludeTestServices = options?.excludeTestServices ?? false
   const withTestEnv = excludeTestServices
-    ? layer_ as Layer.Layer<R | TestServices.TestServices, E>
+    ? layer_ as Layer.Layer<R | TestClock.TestClock, E>
     : Layer.provideMerge(layer_, TestEnv)
-  const memoMap = options?.memoMap ?? Effect.runSync(Layer.makeMemoMap)
-  const scope = Effect.runSync(Scope.make())
-  const runtimeEffect = Layer.toRuntimeWithMemoMap(withTestEnv, memoMap).pipe(
-    Scope.extend(scope),
-    Effect.orDie,
-    Effect.cached,
-    Effect.runSync
-  )
+  const memoMap = options?.memoMap ?? Layer.makeMemoMapUnsafe()
+  const managedRuntime = ManagedRuntime.make(withTestEnv.pipe(Layer.orDie), { memoMap })
+  // Cache the context locally so that even after managedRuntime.dispose() the
+  // context remains accessible. This is important because nested `it.layer` calls
+  // mutate B.it in-place and can overwrite the `effect` method with a reference
+  // to the inner layer's context. By caching separately we avoid "ManagedRuntime
+  // disposed" errors when outer-layer tests run after an inner layer is torn down.
+  let layerContext: Context.Context<R | TestClock.TestClock> | undefined
 
   const makeIt = (it: B.TestAPI): BunTest.BunTest.MethodsNonLive<R, ExcludeTestServices> =>
     Object.assign(it, {
-      effect: makeTester<TestServices.TestServices | R>(
-        (effect) => Effect.flatMap(runtimeEffect, (runtime) => effect.pipe(Effect.provide(runtime))),
+      effect: makeTester<TestClock.TestClock | R>(
+        (effect) => Effect.suspend(() =>
+          layerContext
+            ? effect.pipe(Effect.provide(layerContext))
+            : Effect.flatMap(managedRuntime.contextEffect, (context) => effect.pipe(Effect.provide(context)))
+        ),
         it
       ),
 
       prop,
 
-      scoped: makeTester<TestServices.TestServices | Scope.Scope | R>(
+      scoped: makeTester<TestClock.TestClock | Scope.Scope | R>(
         (effect) =>
-          Effect.flatMap(runtimeEffect, (runtime) =>
-            effect.pipe(
-              Effect.scoped,
-              Effect.provide(runtime)
-            )),
+          Effect.suspend(() =>
+            layerContext
+              ? effect.pipe(Effect.scoped, Effect.provide(layerContext))
+              : Effect.flatMap(managedRuntime.contextEffect, (context) =>
+                  effect.pipe(
+                    Effect.scoped,
+                    Effect.provide(context)
+                  ))
+          ),
         it
       ),
       flakyTest,
@@ -229,8 +235,10 @@ export const layer = <R, E, const ExcludeTestServices extends boolean = false>(
   const label = args.length === 1 ? "" : args[0]
 
   return B.describe(label, () => {
-    B.beforeAll(() => runPromise()(Effect.asVoid(runtimeEffect)))
-    B.afterAll(() => runPromise()(Scope.close(scope, Exit.void)))
+    B.beforeAll(async () => {
+      layerContext = await managedRuntime.context()
+    })
+    B.afterAll(() => managedRuntime.dispose())
     return (args.length === 1 ? args[0] : args[1])(makeIt(B.it))
   })
 }
@@ -255,8 +263,8 @@ export const flakyTest = <A, E, R>(
 /** @internal */
 export const makeMethods = (it: B.TestAPI): BunTest.BunTest.Methods =>
   Object.assign(it, {
-    effect: makeTester<TestServices.TestServices>(Effect.provide(TestEnv), it),
-    scoped: makeTester<TestServices.TestServices | Scope.Scope>(flow(Effect.scoped, Effect.provide(TestEnv)), it),
+    effect: makeTester<TestClock.TestClock>(Effect.provide(TestEnv), it),
+    scoped: makeTester<TestClock.TestClock | Scope.Scope>(flow(Effect.scoped, Effect.provide(TestEnv)), it),
     live: makeTester<never>(identity, it),
     scopedLive: makeTester<Scope.Scope>(Effect.scoped, it),
     flakyTest,

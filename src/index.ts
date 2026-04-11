@@ -3,11 +3,10 @@
  */
 import type * as Duration from "effect/Duration"
 import type * as Effect from "effect/Effect"
-import type * as FC from "effect/FastCheck"
 import type * as Layer from "effect/Layer"
 import type * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import type * as TestServices from "effect/TestServices"
+import type { FastCheck as FC, TestClock } from "effect/testing"
 import * as B from "./bun.js"
 import * as internal from "./internal/internal.js"
 
@@ -47,8 +46,8 @@ export namespace BunTest {
    * @since 1.0.0
    */
   export type Arbitraries =
-    | Array<Schema.Schema.Any | FC.Arbitrary<any>>
-    | { [K in string]: Schema.Schema.Any | FC.Arbitrary<any> }
+    | Array<Schema.Top | FC.Arbitrary<any>>
+    | { [K in string]: Schema.Top | FC.Arbitrary<any> }
 
   /**
    * @since 1.0.0
@@ -91,13 +90,13 @@ export namespace BunTest {
    * @since 1.0.0
    */
   export interface MethodsNonLive<R = never, ExcludeTestServices extends boolean = false> extends API {
-    readonly effect: BunTest.Tester<(ExcludeTestServices extends true ? never : TestServices.TestServices) | R>
+    readonly effect: BunTest.Tester<(ExcludeTestServices extends true ? never : TestClock.TestClock) | R>
     readonly flakyTest: <A, E, R2>(
       self: Effect.Effect<A, E, R2>,
       timeout?: Duration.DurationInput
     ) => Effect.Effect<A, never, R2>
     readonly scoped: BunTest.Tester<
-      (ExcludeTestServices extends true ? never : TestServices.TestServices) | Scope.Scope | R
+      (ExcludeTestServices extends true ? never : TestClock.TestClock) | Scope.Scope | R
     >
     readonly layer: <R2, E>(layer: Layer.Layer<R2, E, R>, options?: {
       readonly timeout?: Duration.DurationInput
@@ -140,12 +139,12 @@ export namespace BunTest {
 /**
  * @since 1.0.0
  */
-export const effect: BunTest.Tester<TestServices.TestServices> = internal.effect
+export const effect: BunTest.Tester<TestClock.TestClock> = internal.effect
 
 /**
  * @since 1.0.0
  */
-export const scoped: BunTest.Tester<TestServices.TestServices | Scope.Scope> = internal.scoped
+export const scoped: BunTest.Tester<TestClock.TestClock | Scope.Scope> = internal.scoped
 
 /**
  * @since 1.0.0

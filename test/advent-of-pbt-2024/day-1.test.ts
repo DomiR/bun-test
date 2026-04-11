@@ -2,12 +2,12 @@ import { it } from "@domir/bun-test"
 import { Schema } from "effect"
 
 class Letter extends Schema.Class<Letter>("Letter")({
-  name: Schema.String.pipe(
-    Schema.minLength(1),
-    Schema.filter((s) => s.match(/^[a-z]+$/) !== null)
+  name: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.isPattern(/^[a-z]+$/)
   ),
-  age: Schema.Int.pipe(
-    Schema.between(1, 77)
+  age: Schema.Int.check(
+    Schema.isBetween({ minimum: 1, maximum: 77 })
   )
 }) {
   static Array = Schema.Array(this)

@@ -3,7 +3,7 @@
  */
 import { expect } from "bun:test"
 import type * as Cause from "effect/Cause"
-import * as Either from "effect/Either"
+import * as Result from "effect/Result"
 import * as Equal from "effect/Equal"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
@@ -202,33 +202,33 @@ export function assertSome<A>(
 }
 
 // ----------------------------
-// Either
+// Result
 // ----------------------------
 
 /**
- * Asserts that `either` is `Left`.
+ * Asserts that `result` is a `Failure`.
  *
  * @since 0.21.0
  */
-export function assertLeft<R, L>(
-  either: Either.Either<R, L>,
-  expected: L,
+export function assertLeft<A, E>(
+  result: Result.Result<A, E>,
+  expected: E,
   ..._: Array<never>
-): asserts either is Either.Left<L, never> {
-  deepStrictEqual(either, Either.left(expected))
+): asserts result is Result.Failure<never, E> {
+  deepStrictEqual(result, Result.fail(expected))
 }
 
 /**
- * Asserts that `either` is `Right`.
+ * Asserts that `result` is a `Success`.
  *
  * @since 0.21.0
  */
-export function assertRight<R, L>(
-  either: Either.Either<R, L>,
-  expected: R,
+export function assertRight<A, E>(
+  result: Result.Result<A, E>,
+  expected: A,
   ..._: Array<never>
-): asserts either is Either.Right<never, R> {
-  deepStrictEqual(either, Either.right(expected))
+): asserts result is Result.Success<A, never> {
+  deepStrictEqual(result, Result.succeed(expected))
 }
 
 // ----------------------------

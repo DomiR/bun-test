@@ -33,18 +33,18 @@
     "coverage": "bun test --coverage"
   },
   "peerDependencies": {
-    "effect": "^3.15.2",
-    "@types/bun": "^1.2.12"
+    "@types/bun": "^1.2.12",
+    "effect": "^4.0.0-beta"
   },
   "devDependencies": {
-    "effect": "^3.16.12",
-    "@types/bun": "^1.2.18",
     "@babel/cli": "^7.24.8",
     "@babel/core": "^7.25.2",
-    "@effect/build-utils": "^0.8.3",
     "@babel/plugin-transform-export-namespace-from": "^7.24.7",
     "@babel/plugin-transform-modules-commonjs": "^7.24.8",
+    "@effect/build-utils": "^0.8.3",
+    "@effect/docgen": "^0.5.2",
+    "@types/bun": "^1.2.18",
     "babel-plugin-annotate-pure-calls": "^0.5.0",
-    "@effect/docgen": "^0.5.2"
+    "effect": "^4.0.0-beta.47"
   }
 }
