@@ -1,39 +1,61 @@
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 import type * as Duration from "effect/Duration"
 import type * as Effect from "effect/Effect"
-import type * as FC from "effect/FastCheck"
 import type * as Layer from "effect/Layer"
 import type * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import type * as TestServices from "effect/TestServices"
+import type * as FC from "effect/testing/FastCheck"
+import * as nodeAssert from "node:assert"
 import * as B from "./bun.js"
 import * as internal from "./internal/internal.js"
 
 /**
- * @since 1.0.0
+ * Chai-style `assert` shim covering the subset used by upstream `@effect/vitest`
+ * tests so they can run unmodified against `@domir/bun-test`. Backed by
+ * `node:assert` where shapes match; small helpers for the chai-only members.
+ *
+ * @since 4.0.0
+ */
+export const assert = {
+  isTrue: (value: unknown, message?: string) => nodeAssert.strictEqual(value, true, message),
+  isFalse: (value: unknown, message?: string) => nodeAssert.strictEqual(value, false, message),
+  strictEqual: nodeAssert.strictEqual,
+  notStrictEqual: nodeAssert.notStrictEqual,
+  deepStrictEqual: nodeAssert.deepStrictEqual,
+  notDeepStrictEqual: nodeAssert.notDeepStrictEqual,
+  fail: nodeAssert.fail,
+  include: (actual: string, expected: string, message?: string) => {
+    if (!actual?.includes(expected)) {
+      nodeAssert.fail(message ?? `Expected\n\n${actual}\n\nto include\n\n${expected}`)
+    }
+  }
+} as const
+
+/**
+ * @since 4.0.0
  */
 export * from "./bun.js"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export interface API extends B.TestAPI {}
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export namespace BunTest {
   /**
-   * @since 1.0.0
+   * @since 4.0.0
    */
   export interface TestFunction<A, E, R, TestArgs extends Array<any>> {
     (...args: TestArgs): Effect.Effect<A, E, R>
   }
 
   /**
-   * @since 1.0.0
+   * @since 4.0.0
    */
   export interface Test<R> {
     <A, E>(
@@ -44,14 +66,14 @@ export namespace BunTest {
   }
 
   /**
-   * @since 1.0.0
+   * @since 4.0.0
    */
   export type Arbitraries =
-    | Array<Schema.Schema.Any | FC.Arbitrary<any>>
-    | { [K in string]: Schema.Schema.Any | FC.Arbitrary<any> }
+    | Array<Schema.Schema<any> | FC.Arbitrary<any>>
+    | { [K in string]: Schema.Schema<any> | FC.Arbitrary<any> }
 
   /**
-   * @since 1.0.0
+   * @since 4.0.0
    */
   export interface Tester<R> extends BunTest.Test<R> {
     skip: BunTest.Test<R>
@@ -64,7 +86,7 @@ export namespace BunTest {
     fails: BunTest.Test<R>
 
     /**
-     * @since 1.0.0
+     * @since 4.0.0
      */
     prop: <const Arbs extends Arbitraries, A, E>(
       name: string,
@@ -74,104 +96,119 @@ export namespace BunTest {
         E,
         R,
         [
-          { [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Schema.Schema.Type<Arbs[K]> }
+          {
+            [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T
+              : Arbs[K] extends Schema.Schema<infer T> ? T
+              : never
+          }
         ]
       >,
       timeout?:
         | number
         | B.TestOptions & {
           fastCheck?: FC.Parameters<
-            { [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Schema.Schema.Type<Arbs[K]> }
+            {
+              [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Arbs[K] extends Schema.Schema<infer T> ? T
+              : never
+            }
           >
         }
     ) => void
   }
 
   /**
-   * @since 1.0.0
+   * @since 4.0.0
    */
-  export interface MethodsNonLive<R = never, ExcludeTestServices extends boolean = false> extends API {
-    readonly effect: BunTest.Tester<(ExcludeTestServices extends true ? never : TestServices.TestServices) | R>
+  export interface MethodsNonLive<R = never> extends API {
+    readonly effect: BunTest.Tester<R | Scope.Scope>
     readonly flakyTest: <A, E, R2>(
-      self: Effect.Effect<A, E, R2>,
-      timeout?: Duration.DurationInput
+      self: Effect.Effect<A, E, R2 | Scope.Scope>,
+      timeout?: Duration.Input
     ) => Effect.Effect<A, never, R2>
-    readonly scoped: BunTest.Tester<
-      (ExcludeTestServices extends true ? never : TestServices.TestServices) | Scope.Scope | R
-    >
     readonly layer: <R2, E>(layer: Layer.Layer<R2, E, R>, options?: {
-      readonly timeout?: Duration.DurationInput
+      readonly timeout?: Duration.Input
     }) => {
-      (f: (it: BunTest.MethodsNonLive<R | R2, ExcludeTestServices>) => void): void
+      (f: (it: BunTest.MethodsNonLive<R | R2>) => void): void
       (
         name: string,
-        f: (it: BunTest.MethodsNonLive<R | R2, ExcludeTestServices>) => void
+        f: (it: BunTest.MethodsNonLive<R | R2>) => void
       ): void
     }
 
     /**
-     * @since 1.0.0
+     * @since 4.0.0
      */
     readonly prop: <const Arbs extends Arbitraries>(
       name: string,
       arbitraries: Arbs,
       self: (
-        properties: { [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Schema.Schema.Type<Arbs[K]> }
+        properties: {
+          [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Arbs[K] extends Schema.Schema<infer T> ? T
+          : never
+        }
       ) => void,
       timeout?:
         | number
         | B.TestOptions & {
           fastCheck?: FC.Parameters<
-            { [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Schema.Schema.Type<Arbs[K]> }
+            {
+              [K in keyof Arbs]: Arbs[K] extends FC.Arbitrary<infer T> ? T : Arbs[K] extends Schema.Schema<infer T> ? T
+              : never
+            }
           >
         }
     ) => void
   }
 
   /**
-   * @since 1.0.0
+   * @since 4.0.0
    */
   export interface Methods<R = never> extends MethodsNonLive<R> {
-    readonly live: BunTest.Tester<R>
-    readonly scopedLive: BunTest.Tester<Scope.Scope | R>
+    readonly live: BunTest.Tester<Scope.Scope | R>
+    readonly layer: <R2, E>(layer: Layer.Layer<R2, E, R>, options?: {
+      readonly memoMap?: Layer.MemoMap
+      readonly timeout?: Duration.Input
+      readonly excludeTestServices?: boolean
+    }) => {
+      (f: (it: BunTest.MethodsNonLive<R | R2>) => void): void
+      (
+        name: string,
+        f: (it: BunTest.MethodsNonLive<R | R2>) => void
+      ): void
+    }
   }
 }
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
-export const effect: BunTest.Tester<TestServices.TestServices> = internal.effect
+export const addEqualityTesters: () => void = internal.addEqualityTesters
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
-export const scoped: BunTest.Tester<TestServices.TestServices | Scope.Scope> = internal.scoped
+export const effect: BunTest.Tester<Scope.Scope> = internal.effect
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
-export const live: BunTest.Tester<never> = internal.live
-
-/**
- * @since 1.0.0
- */
-export const scopedLive: BunTest.Tester<Scope.Scope> = internal.scopedLive
+export const live: BunTest.Tester<Scope.Scope> = internal.live
 
 /**
  * Share a `Layer` between multiple tests, optionally wrapping
  * the tests in a `describe` block if a name is provided.
  *
- * @since 1.0.0
+ * @since 4.0.0
  *
  * ```ts
  * import { expect, layer } from "@domir/bun-test"
- * import { Context, Effect, Layer } from "effect"
+ * import { Effect, Layer, Context } from "effect"
  *
- * class Foo extends Context.Tag("Foo")<Foo, "foo">() {
+ * class Foo extends Context.Service("Foo")<Foo, "foo">() {
  *   static Live = Layer.succeed(Foo, "foo")
  * }
  *
- * class Bar extends Context.Tag("Bar")<Bar, "bar">() {
+ * class Bar extends Context.Service("Bar")<Bar, "bar">() {
  *   static Live = Layer.effect(
  *     Bar,
  *     Effect.map(Foo, () => "bar" as const)
@@ -180,63 +217,60 @@ export const scopedLive: BunTest.Tester<Scope.Scope> = internal.scopedLive
  *
  * layer(Foo.Live)("layer", (it) => {
  *   it.effect("adds context", () =>
- *     Effect.gen(function* () {
+ *     Effect.gen(function*() {
  *       const foo = yield* Foo
  *       expect(foo).toEqual("foo")
- *     })
- *   )
+ *     }))
  *
  *   it.layer(Bar.Live)("nested", (it) => {
  *     it.effect("adds context", () =>
- *       Effect.gen(function* () {
+ *       Effect.gen(function*() {
  *         const foo = yield* Foo
  *         const bar = yield* Bar
  *         expect(foo).toEqual("foo")
  *         expect(bar).toEqual("bar")
- *       })
- *     )
+ *       }))
  *   })
  * })
  * ```
  */
-export const layer: <R, E, const ExcludeTestServices extends boolean = false>(
+export const layer: <R, E>(
   layer_: Layer.Layer<R, E>,
   options?: {
     readonly memoMap?: Layer.MemoMap
-    readonly timeout?: Duration.DurationInput
-    readonly excludeTestServices?: ExcludeTestServices
+    readonly timeout?: Duration.Input
+    readonly excludeTestServices?: boolean
   }
 ) => {
-  (f: (it: BunTest.MethodsNonLive<R, ExcludeTestServices>) => void): void
-  (name: string, f: (it: BunTest.MethodsNonLive<R, ExcludeTestServices>) => void): void
+  (f: (it: BunTest.MethodsNonLive<R>) => void): void
+  (name: string, f: (it: BunTest.MethodsNonLive<R>) => void): void
 } = internal.layer
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const flakyTest: <A, E, R>(
-  self: Effect.Effect<A, E, R>,
-  timeout?: Duration.DurationInput
+  self: Effect.Effect<A, E, R | Scope.Scope>,
+  timeout?: Duration.Input
 ) => Effect.Effect<A, never, R> = internal.flakyTest
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const prop: BunTest.Methods["prop"] = internal.prop
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
-
-/** @ignored */
-const methods = { effect, live, flakyTest, scoped, scopedLive, layer, prop } as const
+export const it: BunTest.Methods = internal.makeMethods(B.it)
 
 /**
- * @since 1.0.0
- */
-export const it: BunTest.Methods & B.TestFunction = Object.assign(B.it, methods)
-
-/**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const makeMethods: (it: B.TestAPI) => BunTest.Methods = internal.makeMethods
+
+/**
+ * @since 4.0.0
+ */
+export const describeWrapped: (name: string, f: (it: BunTest.Methods) => void) => B.SuiteCollector =
+  internal.describeWrapped

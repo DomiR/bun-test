@@ -1,23 +1,63 @@
+/**
+ * @since 4.0.0
+ */
 import * as B from "bun:test"
 
-export type TestAPI = B.Test
+/**
+ * @since 4.0.0
+ */
+export interface TestAPI extends B.Test<[]> {}
 
-// We reexport the type of the test function from bun:test
-// as extending it did not work properly..
+/**
+ * @since 4.0.0
+ */
+export type TestOptions = B.TestOptions
+
+/**
+ * @since 4.0.0
+ */
 export type TestFunction = (
   label: string,
   fn: (() => void | Promise<unknown>) | ((done: (err?: unknown) => void) => void),
   options?: number | TestOptions
 ) => void
 
-export type TestOptions = B.TestOptions
+/**
+ * @since 4.0.0
+ */
 export type SuiteCollector = any
 
-export const it = B.it
-export const beforeAll = B.beforeAll
-export const afterAll = B.afterAll
+/**
+ * @since 4.0.0
+ */
+export const it: TestAPI = B.it as unknown as TestAPI
+
+/**
+ * @since 4.0.0
+ */
 export const describe = B.describe
 
+/**
+ * @since 4.0.0
+ */
+export const beforeAll = B.beforeAll
+
+/**
+ * @since 4.0.0
+ */
+export const afterAll = B.afterAll
+
+/**
+ * @since 4.0.0
+ */
 export const beforeEach = B.beforeEach
+
+/**
+ * @since 4.0.0
+ */
 export const afterEach = B.afterEach
+
+/**
+ * @since 4.0.0
+ */
 export const expect = B.expect

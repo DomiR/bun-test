@@ -1,53 +1,73 @@
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
-import * as Arbitrary from "effect/Arbitrary"
+
 import * as Cause from "effect/Cause"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import * as fc from "effect/FastCheck"
-import * as Fiber from "effect/Fiber"
-import { flow, identity, pipe } from "effect/Function"
+import { flow, pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
-import * as Logger from "effect/Logger"
 import { isObject } from "effect/Predicate"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
-import * as TestEnvironment from "effect/TestContext"
-import type * as TestServices from "effect/TestServices"
+import * as fc from "effect/testing/FastCheck"
+import * as TestClock from "effect/testing/TestClock"
+import * as TestConsole from "effect/testing/TestConsole"
 import * as B from "../bun.js"
 import type * as BunTest from "../index.js"
 
-const runPromise = () => <E, A>(effect: Effect.Effect<A, E>) =>
-  Effect.gen(function*() {
-    const exitFiber = yield* Effect.fork(Effect.exit(effect))
-
-    const exit = yield* Fiber.join(exitFiber)
-    if (Exit.isSuccess(exit)) {
-      return () => exit.value
-    } else {
+const runPromise: <E, A>(_: Effect.Effect<A, E, never>) => Promise<A> = Effect.fnUntraced(
+  function*<E, A>(effect: Effect.Effect<A, E>) {
+    const exit = yield* Effect.exit(effect)
+    if (Exit.isFailure(exit)) {
       const errors = Cause.prettyErrors(exit.cause)
-      for (let i = 1; i < errors.length; i++) {
+      for (let i = 0; i < errors.length; i++) {
         yield* Effect.logError(errors[i])
       }
-      return () => {
-        throw errors[0]
-      }
     }
-  }).pipe(Effect.runPromise).then((f) => f())
-
-/** @internal */
-const runTest = () => <E, A>(effect: Effect.Effect<A, E>) => runPromise()(effect)
-
-/** @internal */
-const TestEnv = TestEnvironment.TestContext.pipe(
-  Layer.provide(Logger.remove(Logger.defaultLogger))
+    return yield* exit
+  },
+  (effect) => Effect.runPromise(effect)
 )
 
 /** @internal */
-const testOptions = (timeout?: number | B.TestOptions) => typeof timeout === "number" ? { timeout } : timeout ?? {}
+const runTest = <E, A>(effect: Effect.Effect<A, E>) => runPromise(effect)
+
+const TestEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer())
+
+/** @internal */
+export const addEqualityTesters = () => {
+  // bun:test has no addEqualityTesters; kept as a no-op for API parity.
+}
+
+/** @internal */
+const testOptions = (timeout?: number | B.TestOptions) =>
+  typeof timeout === "number" ? { timeout } : timeout ?? {}
+
+const hookTimeout = (timeout?: Duration.Input) =>
+  timeout === undefined ? undefined : Duration.toMillis(Duration.fromInputUnsafe(timeout))
+
+const makeItProxy = <Methods extends object>(
+  it: B.TestAPI,
+  overrides: Methods
+): Methods & B.TestAPI =>
+  new Proxy(it as Methods & B.TestAPI, {
+    apply(target, thisArg, argArray) {
+      return Reflect.apply(target as any, thisArg, argArray)
+    },
+    get(target, property, _receiver) {
+      if (property in overrides) {
+        return Reflect.get(overrides, property)
+      }
+      // Forward with `target` (not the proxy) as the receiver — bun:test's
+      // `it.failing` etc. are getters that branch on `this`, and they reject
+      // the proxy because it isn't an instance of bun's internal class.
+      const value = Reflect.get(target, property, target)
+      return typeof value === "function" ? value.bind(target) : value
+    }
+  })
 
 /** @internal */
 const makeTester = <R>(
@@ -57,40 +77,41 @@ const makeTester = <R>(
   const run = <A, E, TestArgs extends Array<unknown>>(
     args: TestArgs,
     self: BunTest.BunTest.TestFunction<A, E, R, TestArgs>
-  ) =>
-    pipe(
-      Effect.suspend(() => self(...args)),
-      mapEffect,
-      runTest()
-    )
+  ) => pipe(Effect.suspend(() => self(...args)), mapEffect, runTest)
 
-  const f: BunTest.BunTest.Test<R> = (name, self, timeout) => it(name, () => run([], self), testOptions(timeout))
+  const f: BunTest.BunTest.Test<R> = (name, self, timeout) =>
+    it(name, () => run([], self), testOptions(timeout))
 
-  const skip: BunTest.BunTest.Tester<R>["only"] = (name, self, timeout) =>
-    it.skip(name, () => run([] as any, self), testOptions(timeout))
+  const skip: BunTest.BunTest.Tester<R>["skip"] = (name, self, timeout) =>
+    it.skip(name, () => run([], self), testOptions(timeout))
 
-  const skipIf: BunTest.BunTest.Tester<R>["skipIf"] = (condition: any) => (name, self, timeout) =>
-    it.skipIf(condition)(name, () => run([] as any, self), testOptions(timeout))
+  const skipIf: BunTest.BunTest.Tester<R>["skipIf"] = (condition) => (name, self, timeout) =>
+    it.skipIf(Boolean(condition))(name, () => run([], self), testOptions(timeout))
 
   const runIf: BunTest.BunTest.Tester<R>["runIf"] = (condition) => (name, self, timeout) =>
-    it.skipIf(!condition)(name, () => run([] as any, self), testOptions(timeout))
+    it.if(Boolean(condition))(name, () => run([], self), testOptions(timeout))
 
   const only: BunTest.BunTest.Tester<R>["only"] = (name, self, timeout) =>
-    it.only(name, () => run([] as any, self), testOptions(timeout))
+    it.only(name, () => run([], self), testOptions(timeout))
 
   const each: BunTest.BunTest.Tester<R>["each"] = (cases) => (name, self, timeout) =>
     it.each(cases as any)(
       name,
-      (args) => run([args], self) as any,
+      (args: any) => run([args], self) as any,
       testOptions(timeout)
     )
 
   const fails: BunTest.BunTest.Tester<R>["fails"] = (name, self, timeout) =>
-    it.failing(name, () => run([] as any, self), testOptions(timeout))
+    it.failing(name, () => run([], self), testOptions(timeout))
 
   const prop: BunTest.BunTest.Tester<R>["prop"] = (name, arbitraries, self, timeout) => {
     if (Array.isArray(arbitraries)) {
-      const arbs = arbitraries.map((arbitrary) => Schema.isSchema(arbitrary) ? Arbitrary.make(arbitrary) : arbitrary)
+      const arbs = arbitraries.map((arbitrary) => {
+        if (Schema.isSchema(arbitrary)) {
+          return Schema.toArbitrary(arbitrary)
+        }
+        return arbitrary as fc.Arbitrary<any>
+      })
       return it(
         name,
         () =>
@@ -105,15 +126,15 @@ const makeTester = <R>(
     }
 
     const arbs = fc.record(
-					Object.entries(arbitraries).reduce(
-						(result, [key, arbitrary]) => {
-							result[key] = Schema.isSchema(arbitrary)
-								? Arbitrary.make(arbitrary)
-								: arbitrary;
-							return result;
-						},
-						{} as Record<string, fc.Arbitrary<any>>,
-					),
+      Object.keys(arbitraries).reduce(function(result, key) {
+        const arb: any = (arbitraries as any)[key]
+        if (Schema.isSchema(arb)) {
+          result[key] = Schema.toArbitrary(arb)
+        } else {
+          result[key] = arb
+        }
+        return result
+      }, {} as Record<string, fc.Arbitrary<any>>)
     )
 
     return it(
@@ -130,24 +151,38 @@ const makeTester = <R>(
     )
   }
 
-  return Object.assign(f, { runIf, fails, only, skip, skipIf, each, prop })
+  return Object.assign(f, { skip, skipIf, runIf, only, each, fails, prop })
 }
 
 /** @internal */
 export const prop: BunTest.BunTest.Methods["prop"] = (name, arbitraries, self, timeout) => {
   if (Array.isArray(arbitraries)) {
-    const arbs = arbitraries.map((arbitrary) => Schema.isSchema(arbitrary) ? Arbitrary.make(arbitrary) : arbitrary)
+    const arbs = arbitraries.map((arbitrary) => {
+      if (Schema.isSchema(arbitrary)) {
+        throw new Error("Schemas are not supported yet")
+      }
+      return arbitrary
+    })
     return B.it(
       name,
       // @ts-ignore
-      () => fc.assert(fc.property(...arbs, (...as) => self(as)), isObject(timeout) ? timeout?.fastCheck : {}),
+      () =>
+        fc.assert(
+          // @ts-ignore
+          fc.property(...arbs, (...as: Array<any>) => self(as)),
+          isObject(timeout) ? (timeout as any)?.fastCheck : {}
+        ),
       testOptions(timeout)
     )
   }
 
   const arbs = fc.record(
     Object.keys(arbitraries).reduce(function(result, key) {
-      result[key] = Schema.isSchema(arbitraries[key]) ? Arbitrary.make(arbitraries[key]) : arbitraries[key]
+      const arb: any = (arbitraries as any)[key]
+      if (Schema.isSchema(arb)) {
+        throw new Error("Schemas are not supported yet")
+      }
+      result[key] = arb
       return result
     }, {} as Record<string, fc.Arbitrary<any>>)
   )
@@ -155,98 +190,114 @@ export const prop: BunTest.BunTest.Methods["prop"] = (name, arbitraries, self, t
   return B.it(
     name,
     // @ts-ignore
-    () => fc.assert(fc.property(arbs, (as) => self(as)), isObject(timeout) ? timeout?.fastCheck : {}),
+    () => fc.assert(fc.property(arbs, (as) => self(as)), isObject(timeout) ? (timeout as any)?.fastCheck : {}),
     testOptions(timeout)
   )
 }
 
 /** @internal */
-export const layer = <R, E, const ExcludeTestServices extends boolean = false>(
+export const layer = <R, E>(
   layer_: Layer.Layer<R, E>,
   options?: {
     readonly memoMap?: Layer.MemoMap
-    readonly timeout?: Duration.DurationInput
-    readonly excludeTestServices?: ExcludeTestServices
+    readonly timeout?: Duration.Input
+    readonly excludeTestServices?: boolean
   }
 ): {
-  (f: (it: BunTest.BunTest.MethodsNonLive<R, ExcludeTestServices>) => void): void
+  (f: (it: BunTest.BunTest.MethodsNonLive<R>) => void): void
   (
     name: string,
-    f: (it: BunTest.BunTest.MethodsNonLive<R, ExcludeTestServices>) => void
+    f: (it: BunTest.BunTest.MethodsNonLive<R>) => void
   ): void
 } =>
 (
   ...args: [
     name: string,
-    f: (
-      it: BunTest.BunTest.MethodsNonLive<R, ExcludeTestServices>
-    ) => void
+    f: (it: BunTest.BunTest.MethodsNonLive<R>) => void
   ] | [
-    f: (it: BunTest.BunTest.MethodsNonLive<R, ExcludeTestServices>) => void
+    f: (it: BunTest.BunTest.MethodsNonLive<R>) => void
   ]
 ) => {
   const excludeTestServices = options?.excludeTestServices ?? false
   const withTestEnv = excludeTestServices
-    ? layer_ as Layer.Layer<R | TestServices.TestServices, E>
+    ? layer_ as Layer.Layer<R, E>
     : Layer.provideMerge(layer_, TestEnv)
   const memoMap = options?.memoMap ?? Effect.runSync(Layer.makeMemoMap)
   const scope = Effect.runSync(Scope.make())
-  const runtimeEffect = Layer.toRuntimeWithMemoMap(withTestEnv, memoMap).pipe(
-    Scope.extend(scope),
+  const contextEffect = Layer.buildWithMemoMap(withTestEnv, memoMap, scope).pipe(
     Effect.orDie,
     Effect.cached,
     Effect.runSync
   )
+  let closed = false
+  const closeScope = () => {
+    if (closed) {
+      return Promise.resolve()
+    }
+    closed = true
+    return runPromise(Scope.close(scope, Exit.void))
+  }
 
-  const makeIt = (it: B.TestAPI): BunTest.BunTest.MethodsNonLive<R, ExcludeTestServices> =>
-    Object.assign(it, {
-      effect: makeTester<TestServices.TestServices | R>(
-        (effect) => Effect.flatMap(runtimeEffect, (runtime) => effect.pipe(Effect.provide(runtime))),
-        it
-      ),
-
-      prop,
-
-      scoped: makeTester<TestServices.TestServices | Scope.Scope | R>(
+  const makeIt = (it: B.TestAPI): BunTest.BunTest.MethodsNonLive<R> =>
+    makeItProxy(it, {
+      effect: makeTester<R | Scope.Scope>(
         (effect) =>
-          Effect.flatMap(runtimeEffect, (runtime) =>
+          Effect.flatMap(contextEffect, (context) =>
             effect.pipe(
               Effect.scoped,
-              Effect.provide(runtime)
+              Effect.provide(context)
             )),
         it
       ),
+      prop,
       flakyTest,
       layer<R2, E2>(nestedLayer: Layer.Layer<R2, E2, R>, options?: {
-        readonly timeout?: Duration.DurationInput
+        readonly timeout?: Duration.Input
       }) {
-        return layer(Layer.provideMerge(nestedLayer, withTestEnv), { ...options, memoMap, excludeTestServices })
+        return layer(Layer.provideMerge(nestedLayer, withTestEnv), {
+          ...options,
+          memoMap: Layer.forkMemoMapUnsafe(memoMap),
+          excludeTestServices
+        })
       }
     })
 
-  // Buns beforeAll and afterAll need to be called in a describe block
-  // to reliably run before and after all tests. In that case we just use an empty label.
+  // Bun's beforeAll/afterAll need to be called in a describe block to reliably
+  // run before and after all tests. When no label is provided, we still wrap in
+  // an empty describe so the lifecycle hooks behave as expected.
   const label = args.length === 1 ? "" : args[0]
 
   return B.describe(label, () => {
-    B.beforeAll(() => runPromise()(Effect.asVoid(runtimeEffect)))
-    B.afterAll(() => runPromise()(Scope.close(scope, Exit.void)))
+    B.beforeAll(
+      () => runPromise(Effect.asVoid(contextEffect)),
+      hookTimeout(options?.timeout)
+    )
+    B.afterAll(
+      () => closeScope(),
+      hookTimeout(options?.timeout)
+    )
     return (args.length === 1 ? args[0] : args[1])(makeIt(B.it))
   })
 }
 
 /** @internal */
 export const flakyTest = <A, E, R>(
-  self: Effect.Effect<A, E, R>,
-  timeout: Duration.DurationInput = Duration.seconds(30)
+  self: Effect.Effect<A, E, R | Scope.Scope>,
+  timeout: Duration.Input = Duration.seconds(30)
 ) =>
   pipe(
-    Effect.catchAllDefect(self, Effect.fail),
+    self,
+    Effect.scoped,
+    Effect.sandbox,
     Effect.retry(
       pipe(
         Schedule.recurs(10),
-        Schedule.compose(Schedule.elapsed),
-        Schedule.whileOutput(Duration.lessThanOrEqualTo(timeout))
+        Schedule.while((_) =>
+          Effect.succeed(Duration.isLessThanOrEqualTo(
+            Duration.fromInputUnsafe(_.elapsed),
+            Duration.fromInputUnsafe(timeout)
+          ))
+        )
       )
     ),
     Effect.orDie
@@ -254,11 +305,9 @@ export const flakyTest = <A, E, R>(
 
 /** @internal */
 export const makeMethods = (it: B.TestAPI): BunTest.BunTest.Methods =>
-  Object.assign(it, {
-    effect: makeTester<TestServices.TestServices>(Effect.provide(TestEnv), it),
-    scoped: makeTester<TestServices.TestServices | Scope.Scope>(flow(Effect.scoped, Effect.provide(TestEnv)), it),
-    live: makeTester<never>(identity, it),
-    scopedLive: makeTester<Scope.Scope>(Effect.scoped, it),
+  makeItProxy(it, {
+    effect: makeTester<Scope.Scope>(flow(Effect.scoped, Effect.provide(TestEnv)), it),
+    live: makeTester<Scope.Scope>(Effect.scoped, it),
     flakyTest,
     layer,
     prop
@@ -269,9 +318,9 @@ export const {
   /** @internal */
   effect,
   /** @internal */
-  live,
-  /** @internal */
-  scoped,
-  /** @internal */
-  scopedLive
+  live
 } = makeMethods(B.it)
+
+/** @internal */
+export const describeWrapped = (name: string, f: (it: BunTest.BunTest.Methods) => void): B.SuiteCollector =>
+  B.describe(name, () => f(makeMethods(B.it)))

@@ -1,39 +1,24 @@
 import { afterAll, describe, expect, it, layer } from "@domir/bun-test"
-import { Context, Duration, Effect, FastCheck, Fiber, Layer, Schema, TestClock, TestConfig } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { FastCheck, TestClock } from "effect/testing"
 
-it.live(
-  "live %s",
-  () => Effect.sync(() => expect(1).toEqual(1))
-)
 it.effect(
   "effect",
-  () => Effect.sync(() => expect(1).toEqual(1))
-)
-it.scoped(
-  "scoped",
   () => Effect.acquireRelease(Effect.sync(() => expect(1).toEqual(1)), () => Effect.void)
 )
-it.scopedLive(
-  "scopedLive",
+it.live(
+  "live",
   () => Effect.acquireRelease(Effect.sync(() => expect(1).toEqual(1)), () => Effect.void)
 )
 
 // each
 
-it.live.each([1, 2, 3])(
-  "live each %s",
-  (n) => Effect.sync(() => expect(n).toEqual(n))
-)
 it.effect.each([1, 2, 3])(
   "effect each %s",
-  (n) => Effect.sync(() => expect(n).toEqual(n))
-)
-it.scoped.each([1, 2, 3])(
-  "scoped each %s",
   (n) => Effect.acquireRelease(Effect.sync(() => expect(n).toEqual(n)), () => Effect.void)
 )
-it.scopedLive.each([1, 2, 3])(
-  "scopedLive each %s",
+it.live.each([1, 2, 3])(
+  "live each %s",
   (n) => Effect.acquireRelease(Effect.sync(() => expect(n).toEqual(n)), () => Effect.void)
 )
 
@@ -47,64 +32,58 @@ it.effect.skip(
   "effect skipped",
   () => Effect.die("skipped anyway")
 )
-it.scoped.skip(
-  "scoped skipped",
-  () => Effect.acquireRelease(Effect.die("skipped anyway"), () => Effect.void)
-)
-it.scopedLive.skip(
-  "scopedLive skipped",
-  () => Effect.acquireRelease(Effect.die("skipped anyway"), () => Effect.void)
-)
 
-// // skipIf
+// skipIf
 
 it.effect.skipIf(true)("effect skipIf (true)", () => Effect.die("skipped anyway"))
 it.effect.skipIf(false)("effect skipIf (false)", () => Effect.sync(() => expect(1).toEqual(1)))
 
-// // runIf
+// runIf
 
 it.effect.runIf(true)("effect runIf (true)", () => Effect.sync(() => expect(1).toEqual(1)))
 it.effect.runIf(false)("effect runIf (false)", () => Effect.die("not run anyway"))
 
 // The following test is expected to fail because it simulates a test timeout.
 // Be aware that eventual "failure" of the test is only logged out.
-it.scopedLive.fails("interrupts on timeout", (ctx) =>
+it.live.fails("interrupts on timeout", () =>
   Effect.gen(function*() {
     let acquired = false
 
-    ctx.onTestFailed(() => {
-      if (acquired) {
-        // eslint-disable-next-line no-console
-        console.error("'effect is interrupted on timeout' @domir/bun-test test failed")
-      }
-    })
-
     yield* Effect.acquireRelease(
       Effect.sync(() => acquired = true),
-      () => Effect.sync(() => acquired = false)
+      () => Effect.sync(() => {
+        if (acquired) {
+          // eslint-disable-next-line no-console
+          console.error("'effect is interrupted on timeout' @domir/bun-test test failed")
+        }
+        acquired = false
+      })
     )
     yield* Effect.sleep(1000)
   }), 1)
 
-class Foo extends Context.Tag("Foo")<Foo, "foo">() {
+class Foo extends Context.Service<Foo, "foo">()("Foo") {
   static Live = Layer.succeed(Foo, "foo")
 }
 
-class Bar extends Context.Tag("Bar")<Bar, "bar">() {
-  static Live = Layer.effect(Bar, Effect.map(Foo, () => "bar" as const))
+class Bar extends Context.Service<Bar, "bar">()("Bar") {
+  static Live = Layer.effect(Bar, Effect.map(Effect.service(Foo), () => "bar" as const))
 }
 
-class Sleeper extends Effect.Service<Sleeper>()("Sleeper", {
-  effect: Effect.gen(function*() {
-    const clock = yield* Effect.clock
+class Sleeper extends Context.Service<Sleeper, {
+  sleep: (ms: number) => Effect.Effect<void>
+}>()("Sleeper") {
+  static Default = Layer.effect(
+    Sleeper,
+    Effect.clockWith((clock) =>
+      Effect.succeed({
+        sleep: (ms: number) => clock.sleep(Duration.millis(ms))
+      } as const)
+    )
+  )
+}
 
-    return {
-      sleep: (ms: number) => clock.sleep(Duration.millis(ms))
-    } as const
-  })
-}) {}
-
-const realNumber = Schema.Finite.pipe(Schema.nonNaN())
+const realNumber = FastCheck.float({ noNaN: true, noDefaultInfinity: true })
 
 describe.only("layer", () => {
   layer(Foo.Live)((it) => {
@@ -140,8 +119,8 @@ describe.only("layer", () => {
         expect(released).toEqual(true)
       })
 
-      class Scoped extends Context.Tag("Scoped")<Scoped, "scoped">() {
-        static Live = Layer.scoped(
+      class Scoped extends Context.Service<Scoped, "scoped">()("Scoped") {
+        static Live = Layer.effect(
           Scoped,
           Effect.acquireRelease(
             Effect.succeed("scoped" as const),
@@ -179,10 +158,9 @@ describe.only("layer", () => {
   layer(Sleeper.Default)("test services", (it) => {
     it.effect("TestClock", () =>
       Effect.gen(function*() {
-        yield* TestConfig.TestConfig
         const sleeper = yield* Sleeper
-        const fiber = yield* Effect.fork(sleeper.sleep(100_000))
-        yield* Effect.yieldNow()
+        const fiber = yield* Effect.forkChild(sleeper.sleep(100_000))
+        yield* Effect.yieldNow
         yield* TestClock.adjust(100_000)
         yield* Fiber.join(fiber)
       }))
@@ -236,7 +214,7 @@ it.effect.prop("symmetry with object", { a: realNumber, b: FastCheck.integer() }
     return a + b === b + a
   }))
 
-it.scoped.prop(
+it.effect.prop(
   "should detect the substring",
   { a: Schema.String, b: Schema.String, c: FastCheck.string() },
   ({ a, b, c }) =>
