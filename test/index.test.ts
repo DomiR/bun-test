@@ -43,21 +43,24 @@ it.effect.skipIf(false)("effect skipIf (false)", () => Effect.sync(() => expect(
 it.effect.runIf(true)("effect runIf (true)", () => Effect.sync(() => expect(1).toEqual(1)))
 it.effect.runIf(false)("effect runIf (false)", () => Effect.die("not run anyway"))
 
-// The following test is expected to fail because it simulates a test timeout.
-// Be aware that eventual "failure" of the test is only logged out.
-it.live.fails("interrupts on timeout", () =>
+// This simulates a runner-timeout interrupting a running effect, so it can be
+// re-enabled if bun ever supports it. bun's test function receives no
+// `AbortSignal`, only an optional `done` callback (see bun-types' `Test`
+// interface), so `@domir/bun-test` has no way to hand a signal to
+// `Effect.runPromise` and interrupt the fiber when bun's own per-test timeout
+// fires: the effect below just keeps sleeping past the 1ms timeout instead of
+// being interrupted. Separately, and less importantly, bun 1.3.14's
+// `test.failing` only flips a thrown error, not a runner timeout, so this
+// couldn't pass as `it.live.fails` either way. The rstest/vitest ports keep
+// the equivalent test enabled because their runners hand `Effect.runPromise`
+// a real signal.
+it.live.skip("interrupts on timeout", () =>
   Effect.gen(function*() {
     let acquired = false
 
     yield* Effect.acquireRelease(
       Effect.sync(() => acquired = true),
-      () => Effect.sync(() => {
-        if (acquired) {
-          // eslint-disable-next-line no-console
-          console.error("'effect is interrupted on timeout' @domir/bun-test test failed")
-        }
-        acquired = false
-      })
+      () => Effect.sync(() => acquired = false)
     )
     yield* Effect.sleep(1000)
   }), 1)
@@ -85,7 +88,7 @@ class Sleeper extends Context.Service<Sleeper, {
 
 const realNumber = FastCheck.float({ noNaN: true, noDefaultInfinity: true })
 
-describe.only("layer", () => {
+describe("layer", () => {
   layer(Foo.Live)((it) => {
     it.effect("adds context", () =>
       Effect.gen(function*() {

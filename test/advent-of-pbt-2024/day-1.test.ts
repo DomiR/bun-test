@@ -26,7 +26,7 @@ function sortLetters(letters: Schema.Schema.Type<typeof Letter.Array>) {
 // pass/fail polarity so this surfaces as a passing test.
 it.failing("day #1: should properly sort letters", () => {
   fc.assert(
-    fc.property(Schema.toArbitrary(Letter.Array), (unsortedLetters) => {
+    fc.property(Schema.toArbitrary(Letter.Array)(fc), (unsortedLetters) => {
       const letters = sortLetters(unsortedLetters)
       for (let i = 1; i < letters.length; ++i) {
         const prev = letters[i - 1]

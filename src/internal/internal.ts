@@ -108,7 +108,7 @@ const makeTester = <R>(
     if (Array.isArray(arbitraries)) {
       const arbs = arbitraries.map((arbitrary) => {
         if (Schema.isSchema(arbitrary)) {
-          return Schema.toArbitrary(arbitrary)
+          return Schema.toArbitrary(arbitrary)(fc)
         }
         return arbitrary as fc.Arbitrary<any>
       })
@@ -129,7 +129,7 @@ const makeTester = <R>(
       Object.keys(arbitraries).reduce(function(result, key) {
         const arb: any = (arbitraries as any)[key]
         if (Schema.isSchema(arb)) {
-          result[key] = Schema.toArbitrary(arb)
+          result[key] = Schema.toArbitrary(arb)(fc)
         } else {
           result[key] = arb
         }
