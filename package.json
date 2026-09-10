@@ -29,7 +29,7 @@
     "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
     "check": "tsc -b tsconfig.json",
-    "test": "bun test test/index.test.ts && bun test test/equality-tester.test.ts",
+    "test": "bun test test/index.test.ts && bun test test/equality-tester.test.ts && bun test test/utils.test.ts",
     "coverage": "bun test --coverage"
   },
   "peerDependencies": {

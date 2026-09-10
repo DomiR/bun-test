@@ -9,6 +9,7 @@ import * as Exit from "effect/Exit"
 import { flow, pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
 import { isObject } from "effect/Predicate"
+import * as Rec from "effect/Record"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
@@ -58,10 +59,10 @@ const makeItProxy = <Methods extends object>(
       return Reflect.apply(target as any, thisArg, argArray)
     },
     get(target, property, _receiver) {
-      if (property in overrides) {
+      if (Object.hasOwn(overrides, property)) {
         return Reflect.get(overrides, property)
       }
-      // Forward with `target` (not the proxy) as the receiver — bun:test's
+      // Forward with `target` (not the proxy) as the receiver: bun:test's
       // `it.failing` etc. are getters that branch on `this`, and they reject
       // the proxy because it isn't an instance of bun's internal class.
       const value = Reflect.get(target, property, target)
@@ -94,8 +95,11 @@ const makeTester = <R>(
   const only: BunTest.BunTest.Tester<R>["only"] = (name, self, timeout) =>
     it.only(name, () => run([], self), testOptions(timeout))
 
+  // vitest's `it.for` hands each case to the test function whole, while bun's
+  // `it.each` spreads array cases into positional arguments. Wrap every case in
+  // a single-element row so bun's spreading yields the whole case again.
   const each: BunTest.BunTest.Tester<R>["each"] = (cases) => (name, self, timeout) =>
-    it.each(cases as any)(
+    it.each(cases.map((c) => [c]) as any)(
       name,
       (args: any) => run([args], self) as any,
       testOptions(timeout)
@@ -127,12 +131,8 @@ const makeTester = <R>(
 
     const arbs = fc.record(
       Object.keys(arbitraries).reduce(function(result, key) {
-        const arb: any = (arbitraries as any)[key]
-        if (Schema.isSchema(arb)) {
-          result[key] = Schema.toArbitrary(arb)(fc)
-        } else {
-          result[key] = arb
-        }
+        const arb: any = arbitraries[key]
+        Rec.assignProperty(result, key, Schema.isSchema(arb) ? Schema.toArbitrary(arb)(fc) : arb)
         return result
       }, {} as Record<string, fc.Arbitrary<any>>)
     )
@@ -178,11 +178,11 @@ export const prop: BunTest.BunTest.Methods["prop"] = (name, arbitraries, self, t
 
   const arbs = fc.record(
     Object.keys(arbitraries).reduce(function(result, key) {
-      const arb: any = (arbitraries as any)[key]
+      const arb: any = arbitraries[key]
       if (Schema.isSchema(arb)) {
         throw new Error("Schemas are not supported yet")
       }
-      result[key] = arb
+      Rec.assignProperty(result, key, arb)
       return result
     }, {} as Record<string, fc.Arbitrary<any>>)
   )
