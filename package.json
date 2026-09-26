@@ -1,50 +1,50 @@
 {
-  "name": "@domir/bun-test",
-  "version": "3.0.0",
-  "type": "module",
-  "license": "MIT",
-  "description": "A set of helpers for testing Effects with bun test",
-  "homepage": "https://github.com/DomiR/bun-test",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/DomiR/bun-test.git"
-  },
-  "bugs": {
-    "url": "https://github.com/DomiR/bun-test/issues"
-  },
-  "publishConfig": {
-    "access": "public",
-    "directory": "dist",
-    "linkDirectory": false
-  },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./*": "./src/*.ts",
-    "./internal/*": null
-  },
-  "scripts": {
-    "build": "bun run build-esm && bun run build-annotate && bun run build-cjs && build-utils pack-v3",
-    "build-esm": "tsc -b tsconfig.build.json",
-    "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
-    "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
-    "check": "tsc -b tsconfig.json",
-    "test": "bun test test/index.test.ts && bun test test/equality-tester.test.ts && bun test test/utils.test.ts",
-    "coverage": "bun test --coverage"
-  },
-  "peerDependencies": {
-    "effect": "^4.0.0-rc.112",
-    "@types/bun": "^1.4.1"
-  },
-  "devDependencies": {
-    "@babel/cli": "^8.0.4",
-    "@babel/core": "^8.0.1",
-    "@babel/plugin-transform-export-namespace-from": "^8.0.1",
-    "@babel/plugin-transform-modules-commonjs": "^8.0.1",
-    "@effect/build-utils": "^0.8.9",
-    "@effect/docgen": "^0.5.2",
-    "@types/bun": "^1.4.1",
-    "babel-plugin-annotate-pure-calls": "^0.5.0",
-    "effect": "^4.0.0-rc.112"
-  }
+	"name": "@domir/bun-test",
+	"version": "3.0.0",
+	"description": "A set of helpers for testing Effects with bun test",
+	"homepage": "https://github.com/DomiR/bun-test",
+	"bugs": {
+		"url": "https://github.com/DomiR/bun-test/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/DomiR/bun-test.git"
+	},
+	"type": "module",
+	"exports": {
+		"./package.json": "./package.json",
+		".": "./src/index.ts",
+		"./*": "./src/*.ts",
+		"./internal/*": null
+	},
+	"publishConfig": {
+		"access": "public",
+		"directory": "dist",
+		"linkDirectory": false
+	},
+	"scripts": {
+		"build": "bun run build-esm && bun run build-annotate && bun run build-cjs && build-utils pack-v3",
+		"build-esm": "tsc -b tsconfig.build.json",
+		"build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
+		"build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
+		"check": "tsc -b tsconfig.json",
+		"test": "bun test test/index.test.ts && bun test test/equality-tester.test.ts && bun test test/utils.test.ts",
+		"coverage": "bun test --coverage"
+	},
+	"devDependencies": {
+		"@babel/cli": "^8.0.4",
+		"@babel/core": "^8.0.1",
+		"@babel/plugin-transform-export-namespace-from": "^8.0.1",
+		"@babel/plugin-transform-modules-commonjs": "^8.0.1",
+		"@effect/build-utils": "^0.8.9",
+		"@effect/docgen": "^0.5.2",
+		"@types/bun": "^1.4.1",
+		"babel-plugin-annotate-pure-calls": "^0.5.0",
+		"effect": "^4.0.0-rc.117"
+	},
+	"peerDependencies": {
+		"@types/bun": "^1.4.1",
+		"effect": "^4.0.0-rc.117"
+	}
 }
