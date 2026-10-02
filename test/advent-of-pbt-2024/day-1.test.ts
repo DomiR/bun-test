@@ -1,6 +1,6 @@
 import { expect, it } from '@domir/bun-test';
 import { Effect, Schema } from 'effect';
-import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary';
+import * as Arbitrary from 'effect/Arbitrary';
 
 class Letter extends Schema.Class<Letter>('Letter')({
 	name: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isPattern(/^[a-z]+$/))),

@@ -13,7 +13,7 @@ import type * as Schema from 'effect/Schema';
 import * as Scope from 'effect/Scope';
 import * as TestClock from 'effect/testing/TestClock';
 import * as TestConsole from 'effect/testing/TestConsole';
-import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary';
+import * as Arbitrary from 'effect/Arbitrary';
 import * as B from '../bun.js';
 import type * as BunTest from '../index.js';
 

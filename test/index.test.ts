@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, layer } from '@domir/bun-test';
 import { Context, Duration, Effect, Fiber, Layer, Schema } from 'effect';
 import { TestClock } from 'effect/testing';
-import * as Arbitrary from 'effect/unstable/arbitrary/Arbitrary';
+import * as Arbitrary from 'effect/Arbitrary';
 
 it.effect('effect', () =>
 	Effect.acquireRelease(
